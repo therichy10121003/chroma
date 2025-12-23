@@ -351,6 +351,187 @@ class Collection(CollectionCommon["ServerAPI"]):
             "source_distances": distances[: len(context_docs)],
         }
 
+    def generate_image(
+        self,
+        prompt: str,
+        image_generative_function: Optional[Any] = None,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        n_results: int = 3,
+        where: Optional[Where] = None,
+        where_document: Optional[WhereDocument] = None,
+        use_context: bool = True,
+        **generation_kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Generate an image using text-to-image generation with optional RAG context.
+
+        This method can generate images in two modes:
+        1. With context: Query the collection for relevant documents and use them
+           to enhance the image generation prompt (default)
+        2. Without context: Generate directly from the prompt with style/mood control
+
+        Args:
+            prompt: The text description of the image to generate
+            image_generative_function: The image generative function to use
+                                      (OpenAIImageGenerativeFunction, StableDiffusionGenerativeFunction, etc.)
+            style: Visual style (e.g., "photorealistic", "anime", "oil painting")
+                  Use get_available_styles() to see all options
+            mood: Emotional mood (e.g., "cheerful", "mysterious", "dramatic")
+                 Use get_available_moods() to see all options
+            n_results: Number of relevant documents to retrieve for context (if use_context=True)
+            where: Filter documents by metadata
+            where_document: Filter by document content
+            use_context: Whether to use retrieved documents to enhance the prompt
+            **generation_kwargs: Additional parameters for the image generator
+                                (size, quality, steps, etc.)
+
+        Returns:
+            Dict containing:
+                - 'image': Generated image (URL or base64)
+                - 'enhanced_prompt': The full prompt used for generation
+                - 'source_documents': Documents used for context (if use_context=True)
+                - 'style': Applied style
+                - 'mood': Applied mood
+
+        Raises:
+            ValueError: If image_generative_function is not provided
+
+        Example:
+            ```python
+            from chromadb.utils.generative_functions import OpenAIImageGenerativeFunction
+
+            img_gen = OpenAIImageGenerativeFunction(model="dall-e-3")
+            result = collection.generate_image(
+                prompt="A futuristic city",
+                image_generative_function=img_gen,
+                style="cyberpunk",
+                mood="mysterious",
+                use_context=False
+            )
+            print(result['image'])  # URL or base64 of generated image
+            ```
+        """
+        from chromadb.api.types import ImageGenerativeFunction
+
+        if image_generative_function is None:
+            raise ValueError(
+                "image_generative_function must be provided. "
+                "Import from chromadb.utils.generative_functions"
+            )
+
+        if not isinstance(image_generative_function, ImageGenerativeFunction):
+            raise ValueError(
+                f"image_generative_function must implement ImageGenerativeFunction protocol, "
+                f"got {type(image_generative_function)}"
+            )
+
+        enhanced_prompt = prompt
+        source_documents = []
+
+        # If use_context, retrieve relevant documents and enhance prompt
+        if use_context and n_results > 0:
+            query_result = self.query(
+                query_texts=[prompt],
+                n_results=n_results,
+                where=where,
+                where_document=where_document,
+                include=["documents", "metadatas"],
+            )
+
+            documents = query_result["documents"][0] if query_result["documents"] else []
+            source_documents = documents
+
+            # Enhance prompt with document context
+            if documents:
+                context_summary = " ".join(documents[:3])  # Use top 3 documents
+                enhanced_prompt = f"{prompt}. Context: {context_summary}"
+
+        # Generate the image
+        image_output = image_generative_function(
+            prompt=enhanced_prompt,
+            style=style,
+            mood=mood,
+            **generation_kwargs,
+        )
+
+        return {
+            "image": image_output,
+            "enhanced_prompt": enhanced_prompt,
+            "source_documents": source_documents,
+            "style": style,
+            "mood": mood,
+        }
+
+    def transform_image(
+        self,
+        image_input: Union[str, bytes],
+        transformation_prompt: str,
+        image_generative_function: Optional[Any] = None,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        strength: float = 0.5,
+        **generation_kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Transform an existing image using image-to-image generation.
+
+        Args:
+            image_input: Source image (file path or bytes)
+            transformation_prompt: How to transform the image
+            image_generative_function: The image generative function to use
+            style: Visual style to apply
+            mood: Mood to apply
+            strength: Transformation strength (0-1, higher = more change)
+            **generation_kwargs: Additional parameters
+
+        Returns:
+            Dict containing:
+                - 'image': Transformed image
+                - 'transformation_prompt': The prompt used
+                - 'style': Applied style
+                - 'mood': Applied mood
+                - 'strength': Transformation strength
+
+        Example:
+            ```python
+            result = collection.transform_image(
+                image_input="photo.jpg",
+                transformation_prompt="Make it look like a painting",
+                image_generative_function=img_gen,
+                style="impressionist",
+                strength=0.7
+            )
+            ```
+        """
+        from chromadb.api.types import ImageGenerativeFunction
+
+        if image_generative_function is None:
+            raise ValueError("image_generative_function must be provided.")
+
+        if not isinstance(image_generative_function, ImageGenerativeFunction):
+            raise ValueError(
+                f"image_generative_function must implement ImageGenerativeFunction protocol"
+            )
+
+        # Transform the image
+        transformed_image = image_generative_function.transform_image(
+            image_input=image_input,
+            transformation_prompt=transformation_prompt,
+            style=style,
+            mood=mood,
+            strength=strength,
+            **generation_kwargs,
+        )
+
+        return {
+            "image": transformed_image,
+            "transformation_prompt": transformation_prompt,
+            "style": style,
+            "mood": mood,
+            "strength": strength,
+        }
+
     def modify(
         self,
         name: Optional[str] = None,
