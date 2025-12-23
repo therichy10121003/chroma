@@ -237,6 +237,120 @@ class Collection(CollectionCommon["ServerAPI"]):
             response=query_results, include=query_request["include"]
         )
 
+    def generate(
+        self,
+        query_text: str,
+        generative_function: Optional[Any] = None,
+        n_results: int = 5,
+        where: Optional[Where] = None,
+        where_document: Optional[WhereDocument] = None,
+        rag_algorithm: str = "simple",
+        **generation_kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Generate a response using RAG (Retrieval-Augmented Generation).
+
+        This method combines semantic search with a generative model to produce
+        answers grounded in your document collection.
+
+        Args:
+            query_text: The query/question to answer
+            generative_function: The generative function to use (OpenAI, Anthropic, etc.)
+                                If None, raises ValueError
+            n_results: Number of documents to retrieve for context (default: 5)
+            where: Filter results by metadata
+            where_document: Filter by document content
+            rag_algorithm: RAG strategy to use (simple, reranking, hybrid, adaptive)
+            **generation_kwargs: Additional parameters for the generative function
+                                (temperature, max_tokens, etc.)
+
+        Returns:
+            Dict containing:
+                - 'response': Generated text response
+                - 'source_documents': Documents used as context
+                - 'metadata': Metadata of source documents
+
+        Raises:
+            ValueError: If generative_function is not provided
+
+        Example:
+            ```python
+            from chromadb.utils.generative_functions import OpenAIGenerativeFunction
+
+            gen_fn = OpenAIGenerativeFunction(model_name="gpt-4")
+            result = collection.generate(
+                query_text="What is machine learning?",
+                generative_function=gen_fn,
+                n_results=3,
+                temperature=0.7
+            )
+            print(result['response'])
+            ```
+        """
+        from chromadb.api.types import GenerativeFunction
+
+        if generative_function is None:
+            raise ValueError(
+                "generative_function must be provided. "
+                "Import from chromadb.utils.generative_functions"
+            )
+
+        if not isinstance(generative_function, GenerativeFunction):
+            raise ValueError(
+                f"generative_function must implement GenerativeFunction protocol, "
+                f"got {type(generative_function)}"
+            )
+
+        # Query for relevant documents
+        query_result = self.query(
+            query_texts=[query_text],
+            n_results=n_results,
+            where=where,
+            where_document=where_document,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        # Extract documents and metadata
+        documents = query_result["documents"][0] if query_result["documents"] else []
+        metadatas = query_result["metadatas"][0] if query_result["metadatas"] else []
+        distances = query_result["distances"][0] if query_result["distances"] else []
+
+        # Apply RAG algorithm to prepare context
+        from chromadb.utils.generative_functions.rag_algorithms import (
+            create_rag_algorithm,
+            RAGConfig,
+        )
+
+        rag_config = RAGConfig(
+            top_k=n_results,
+            relevance_threshold=generation_kwargs.pop("relevance_threshold", 0.0),
+            max_context_length=generation_kwargs.pop("max_context_length", 4000),
+        )
+
+        rag = create_rag_algorithm(rag_algorithm, rag_config)
+
+        # Prepare context based on RAG algorithm
+        if rag_algorithm == "adaptive":
+            context_docs = rag.prepare_context(
+                documents, distances, metadatas, query=query_text
+            )
+        else:
+            context_docs = rag.prepare_context(documents, distances, metadatas)
+
+        # Generate response using the generative function
+        response = generative_function(
+            prompt=query_text,
+            context=context_docs,
+            **generation_kwargs,
+        )
+
+        return {
+            "response": response,
+            "source_documents": context_docs,
+            "source_metadatas": metadatas[: len(context_docs)],
+            "source_distances": distances[: len(context_docs)],
+        }
+
     def modify(
         self,
         name: Optional[str] = None,

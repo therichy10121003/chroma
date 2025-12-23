@@ -889,6 +889,168 @@ class EmbeddingFunction(Protocol[D]):
         return False
 
 
+# Generative types
+GenerativeInput: TypeAlias = Union[str, List[str]]
+GenerativeOutput: TypeAlias = Union[str, List[str]]
+
+
+@runtime_checkable
+class GenerativeFunction(Protocol):
+    """
+    A protocol for generative functions (LLMs). To implement a new generative function,
+    you need to implement the following methods at minimum:
+    - __call__
+    - generate
+
+    For future compatibility, it is strongly recommended to also implement:
+    - __init__
+    - name
+    - build_from_config
+    - get_config
+
+    Generative functions are used for RAG (Retrieval-Augmented Generation) and other
+    text generation tasks that combine with vector search results.
+    """
+
+    @abstractmethod
+    def __call__(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Generate a response given a prompt and optional context documents.
+
+        Args:
+            prompt: The input prompt/query
+            context: Optional list of context documents to augment the generation
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
+
+        Returns:
+            Generated text response
+        """
+        ...
+
+    def generate(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Generate a response. Default implementation calls __call__.
+
+        Args:
+            prompt: The input prompt/query
+            context: Optional list of context documents
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Generated text response
+        """
+        return self.__call__(prompt, context, **kwargs)
+
+    def generate_batch(
+        self,
+        prompts: List[str],
+        contexts: Optional[List[List[str]]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """
+        Generate responses for multiple prompts in batch.
+
+        Args:
+            prompts: List of input prompts
+            contexts: Optional list of context document lists
+            **kwargs: Additional generation parameters
+
+        Returns:
+            List of generated text responses
+        """
+        if contexts is None:
+            contexts = [None] * len(prompts)  # type: ignore
+
+        return [
+            self.__call__(prompt, context, **kwargs)
+            for prompt, context in zip(prompts, contexts)
+        ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Initialize the generative function.
+        Pass any arguments needed for model initialization.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement __init__. "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def name() -> str:
+        """
+        Return the name of the generative function.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            "The GenerativeFunction class does not implement name(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def build_from_config(config: Dict[str, Any]) -> "GenerativeFunction":
+        """
+        Build the generative function from a config.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            "The GenerativeFunction class does not implement build_from_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Return the config for the generative function for serialization.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement get_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def validate_config(config: Dict[str, Any]) -> None:
+        """
+        Validate the config.
+        """
+        return
+
+    def is_legacy(self) -> bool:
+        if (
+            self.name() is NotImplemented
+            or self.get_config() is NotImplemented
+            or self.build_from_config(self.get_config()) is NotImplemented
+        ):
+            return True
+        return False
+
+
 class DefaultEmbeddingFunction(EmbeddingFunction[Documents]):
     """Default embedding function that delegates to ONNXMiniLM_L6_V2."""
 
