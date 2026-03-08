@@ -889,6 +889,394 @@ class EmbeddingFunction(Protocol[D]):
         return False
 
 
+# Generative types
+GenerativeInput: TypeAlias = Union[str, List[str]]
+GenerativeOutput: TypeAlias = Union[str, List[str]]
+
+
+@runtime_checkable
+class GenerativeFunction(Protocol):
+    """
+    A protocol for generative functions (LLMs). To implement a new generative function,
+    you need to implement the following methods at minimum:
+    - __call__
+    - generate
+
+    For future compatibility, it is strongly recommended to also implement:
+    - __init__
+    - name
+    - build_from_config
+    - get_config
+
+    Generative functions are used for RAG (Retrieval-Augmented Generation) and other
+    text generation tasks that combine with vector search results.
+    """
+
+    @abstractmethod
+    def __call__(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Generate a response given a prompt and optional context documents.
+
+        Args:
+            prompt: The input prompt/query
+            context: Optional list of context documents to augment the generation
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
+
+        Returns:
+            Generated text response
+        """
+        ...
+
+    def generate(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Generate a response. Default implementation calls __call__.
+
+        Args:
+            prompt: The input prompt/query
+            context: Optional list of context documents
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Generated text response
+        """
+        return self.__call__(prompt, context, **kwargs)
+
+    def generate_batch(
+        self,
+        prompts: List[str],
+        contexts: Optional[List[List[str]]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """
+        Generate responses for multiple prompts in batch.
+
+        Args:
+            prompts: List of input prompts
+            contexts: Optional list of context document lists
+            **kwargs: Additional generation parameters
+
+        Returns:
+            List of generated text responses
+        """
+        if contexts is None:
+            contexts = [None] * len(prompts)  # type: ignore
+
+        return [
+            self.__call__(prompt, context, **kwargs)
+            for prompt, context in zip(prompts, contexts)
+        ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Initialize the generative function.
+        Pass any arguments needed for model initialization.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement __init__. "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def name() -> str:
+        """
+        Return the name of the generative function.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            "The GenerativeFunction class does not implement name(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def build_from_config(config: Dict[str, Any]) -> "GenerativeFunction":
+        """
+        Build the generative function from a config.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            "The GenerativeFunction class does not implement build_from_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Return the config for the generative function for serialization.
+
+        Note: Future implementations should override this method.
+        """
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement get_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def validate_config(config: Dict[str, Any]) -> None:
+        """
+        Validate the config.
+        """
+        return
+
+    def is_legacy(self) -> bool:
+        if (
+            self.name() is NotImplemented
+            or self.get_config() is NotImplemented
+            or self.build_from_config(self.get_config()) is NotImplemented
+        ):
+            return True
+        return False
+
+
+# Image generative types
+ImageGenerativeInput: TypeAlias = str  # Text prompt for image generation
+ImageGenerativeOutput: TypeAlias = Union[str, bytes]  # URL or image bytes
+
+
+@runtime_checkable
+class ImageGenerativeFunction(Protocol):
+    """
+    A protocol for image generative functions (text-to-image, image-to-image).
+
+    This protocol enables integration with various image generation models like
+    DALL-E, Stable Diffusion, Midjourney, etc., for creating and styling images.
+
+    Key features:
+    - Text-to-image generation
+    - Image-to-image styling and transformation
+    - Mood and style control
+    - Resolution and quality settings
+    """
+
+    @abstractmethod
+    def __call__(
+        self,
+        prompt: str,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ImageGenerativeOutput:
+        """
+        Generate an image from a text prompt.
+
+        Args:
+            prompt: Text description of the desired image
+            style: Visual style (e.g., "photorealistic", "anime", "oil painting")
+            mood: Emotional tone (e.g., "cheerful", "mysterious", "dramatic")
+            **kwargs: Additional parameters (size, quality, seed, etc.)
+
+        Returns:
+            Generated image as URL or bytes
+        """
+        ...
+
+    def generate_image(
+        self,
+        prompt: str,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ImageGenerativeOutput:
+        """
+        Generate an image. Default implementation calls __call__.
+
+        Args:
+            prompt: Text description
+            style: Visual style
+            mood: Emotional tone
+            **kwargs: Additional parameters
+
+        Returns:
+            Generated image
+        """
+        return self.__call__(prompt, style, mood, **kwargs)
+
+    def generate_variations(
+        self,
+        prompt: str,
+        n: int = 3,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        **kwargs: Any,
+    ) -> List[ImageGenerativeOutput]:
+        """
+        Generate multiple variations of an image.
+
+        Args:
+            prompt: Text description
+            n: Number of variations to generate
+            style: Visual style
+            mood: Emotional tone
+            **kwargs: Additional parameters
+
+        Returns:
+            List of generated images
+        """
+        return [
+            self.__call__(prompt, style, mood, **kwargs)
+            for _ in range(n)
+        ]
+
+    def transform_image(
+        self,
+        image_input: Union[str, bytes],
+        transformation_prompt: str,
+        style: Optional[str] = None,
+        mood: Optional[str] = None,
+        strength: float = 0.5,
+        **kwargs: Any,
+    ) -> ImageGenerativeOutput:
+        """
+        Transform an existing image based on a prompt (image-to-image).
+
+        Args:
+            image_input: Source image (URL or bytes)
+            transformation_prompt: How to transform the image
+            style: Visual style for transformation
+            mood: Mood for transformation
+            strength: Transformation strength (0-1, higher = more change)
+            **kwargs: Additional parameters
+
+        Returns:
+            Transformed image
+        """
+        raise NotImplementedError(
+            "This image generative function does not support image transformation"
+        )
+
+    def apply_style(
+        self,
+        image_input: Union[str, bytes],
+        style: str,
+        intensity: float = 1.0,
+        **kwargs: Any,
+    ) -> ImageGenerativeOutput:
+        """
+        Apply a specific style to an existing image.
+
+        Args:
+            image_input: Source image (URL or bytes)
+            style: Style to apply (e.g., "impressionist", "cyberpunk")
+            intensity: Style application intensity (0-1)
+            **kwargs: Additional parameters
+
+        Returns:
+            Styled image
+        """
+        return self.transform_image(
+            image_input,
+            f"Apply {style} style to this image",
+            style=style,
+            strength=intensity,
+            **kwargs,
+        )
+
+    def set_mood(
+        self,
+        image_input: Union[str, bytes],
+        mood: str,
+        intensity: float = 1.0,
+        **kwargs: Any,
+    ) -> ImageGenerativeOutput:
+        """
+        Adjust the mood/atmosphere of an existing image.
+
+        Args:
+            image_input: Source image (URL or bytes)
+            mood: Desired mood (e.g., "melancholic", "energetic", "serene")
+            intensity: Mood adjustment intensity (0-1)
+            **kwargs: Additional parameters
+
+        Returns:
+            Mood-adjusted image
+        """
+        return self.transform_image(
+            image_input,
+            f"Adjust the mood to be {mood}",
+            mood=mood,
+            strength=intensity,
+            **kwargs,
+        )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the image generative function."""
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement __init__. "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def name() -> str:
+        """Return the name of the image generative function."""
+        warnings.warn(
+            "The ImageGenerativeFunction class does not implement name(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def build_from_config(config: Dict[str, Any]) -> "ImageGenerativeFunction":
+        """Build the image generative function from a config."""
+        warnings.warn(
+            "The ImageGenerativeFunction class does not implement build_from_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    def get_config(self) -> Dict[str, Any]:
+        """Return the config for serialization."""
+        warnings.warn(
+            f"The class {self.__class__.__name__} does not implement get_config(). "
+            "This will be required in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return NotImplemented
+
+    @staticmethod
+    def validate_config(config: Dict[str, Any]) -> None:
+        """Validate the config."""
+        return
+
+    def is_legacy(self) -> bool:
+        if (
+            self.name() is NotImplemented
+            or self.get_config() is NotImplemented
+            or self.build_from_config(self.get_config()) is NotImplemented
+        ):
+            return True
+        return False
+
+
 class DefaultEmbeddingFunction(EmbeddingFunction[Documents]):
     """Default embedding function that delegates to ONNXMiniLM_L6_V2."""
 
